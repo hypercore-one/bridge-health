@@ -1,6 +1,6 @@
-# Zenon Orchestrator Status Page
+# Bridge Health Monitoring Service
 
-A production-ready Flask web application that monitors Zenon Network orchestrator nodes in real-time, providing a modern web dashboard and comprehensive JSON API endpoints with API key authentication.
+A production-ready Flask web application that monitors Zenon Network orchestrator nodes in real-time, providing a modern web dashboard and comprehensive JSON API endpoints with API key authentication. This service monitors the health of the Zenon bridge infrastructure by tracking orchestrator node status.
 
 ## Features
 
@@ -18,31 +18,42 @@ A production-ready Flask web application that monitors Zenon Network orchestrato
 
 1. **Clone and Setup**:
 ```bash
-git clone <repository-url>
-cd orchestrator-status-page
+git clone https://github.com/hypercore-one/bridge-health.git
+cd bridge-health
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-2. **Configure**:
+2. **Configure Environment**:
 ```bash
 cp .env.example .env
-# Edit .env to add your orchestrator IPs and API keys
+nano .env  # Add your API keys and update settings
 ```
 
-3. **Generate API Keys**:
+3. **Configure Orchestrator Mapping**:
+```bash
+cp config/orchestrator_mapping.py.example config/orchestrator_mapping.py
+nano config/orchestrator_mapping.py  # Add actual orchestrator IPs and names
+```
+
+4. **Create Required Directories**:
+```bash
+mkdir -p data logs
+```
+
+5. **Generate API Keys**:
 ```bash
 python scripts/generate_api_key.py
 # Add generated keys to .env file API_KEYS setting
 ```
 
-4. **Run**:
+6. **Run Development Server**:
 ```bash
 python run.py
 ```
 
-5. **Access**:
+7. **Access**:
 - Web UI: http://localhost:5001
 - API: http://localhost:5001/api/status (requires API key for external access)
 
@@ -256,14 +267,7 @@ Returns API authentication information:
 
 ## Static Pillar Mapping
 
-The application includes static pillar name mapping for all 20 orchestrators, ensuring consistent display even when API endpoints are unreachable:
-
-- **Anvil** (192.168.1.100)
-- **Zeno** (192.168.1.101)
-- **0x3639.com** (192.168.1.102)
-- **12N11** (192.168.1.103)
-- **NoMLabz.org** (192.168.1.104)
-- And 15 more...
+The application includes static pillar name mapping for all 20 orchestrators, ensuring consistent display even when API endpoints are unreachable. Orchestrator mappings are configured in `config/orchestrator_mapping.py` (not committed to git for security).
 
 ## Performance
 
@@ -302,29 +306,168 @@ Example log entries:
 
 ## Production Deployment
 
-### Using Gunicorn (Recommended)
+### Complete Setup Guide (Using Gunicorn at /opt/bridge-health)
+
+1. **Clone to Production Location**:
 ```bash
-pip install gunicorn
-gunicorn -w 4 -b 0.0.0.0:5001 "app.main:create_app()"
+sudo mkdir -p /opt
+cd /opt
+sudo git clone https://github.com/hypercore-one/bridge-health.git
+sudo chown -R $USER:$USER /opt/bridge-health
+cd /opt/bridge-health
 ```
 
-### Using systemd
-Create `/etc/systemd/system/orchestrator-status.service`:
+2. **Set Up Python Environment**:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install gunicorn
+```
+
+3. **Configure Application**:
+```bash
+# Create directories
+mkdir -p data logs
+
+# Set up environment
+cp .env.example .env
+nano .env  # Add your configuration
+
+# Set up orchestrator mapping
+cp config/orchestrator_mapping.py.example config/orchestrator_mapping.py
+nano config/orchestrator_mapping.py  # Add actual orchestrator details
+
+# Set permissions
+chmod 600 .env
+chmod 600 config/orchestrator_mapping.py
+```
+
+4. **Test with Gunicorn**:
+```bash
+gunicorn -c gunicorn_config.py "app:create_app()"
+```
+
+5. **Create Systemd Service**:
+```bash
+sudo nano /etc/systemd/system/bridge-health.service
+```
+
+Add:
 ```ini
 [Unit]
-Description=Zenon Orchestrator Status Page
+Description=Bridge Health Monitoring Service with Gunicorn
 After=network.target
 
 [Service]
-Type=simple
-User=orchestrator
-WorkingDirectory=/path/to/orchestrator-status-page
-Environment=PATH=/path/to/orchestrator-status-page/venv/bin
-ExecStart=/path/to/orchestrator-status-page/venv/bin/gunicorn -w 4 -b 0.0.0.0:5001 "app.main:create_app()"
+Type=notify
+User=$USER
+Group=$USER
+WorkingDirectory=/opt/bridge-health
+Environment="PATH=/opt/bridge-health/venv/bin"
+ExecStart=/opt/bridge-health/venv/bin/gunicorn -c /opt/bridge-health/gunicorn_config.py "app:create_app()"
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
 Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
+```
+
+6. **Enable and Start Service**:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable bridge-health
+sudo systemctl start bridge-health
+sudo systemctl status bridge-health
+```
+
+7. **Configure Nginx** (Optional but recommended):
+```bash
+sudo nano /etc/nginx/sites-available/bridge-health
+```
+
+Add:
+```nginx
+upstream bridge_health {
+    server 127.0.0.1:5001 fail_timeout=0;
+}
+
+server {
+    listen 80;
+    server_name your-domain.com;
+    
+    client_max_body_size 4G;
+    keepalive_timeout 5;
+
+    location / {
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host $http_host;
+        proxy_redirect off;
+        proxy_pass http://bridge_health;
+    }
+
+    location /static/ {
+        alias /opt/bridge-health/app/static/;
+        expires 30d;
+    }
+}
+```
+
+Enable site:
+```bash
+sudo ln -s /etc/nginx/sites-available/bridge-health /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+8. **Set Up SSL** (Recommended):
+```bash
+sudo certbot --nginx -d your-domain.com
+```
+
+9. **Configure Log Rotation**:
+```bash
+sudo nano /etc/logrotate.d/bridge-health
+```
+
+Add:
+```
+/opt/bridge-health/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 $USER $USER
+    sharedscripts
+    postrotate
+        systemctl reload bridge-health
+    endscript
+}
+```
+
+### Monitoring Commands
+
+```bash
+# Service status
+sudo systemctl status bridge-health
+
+# View logs
+sudo journalctl -u bridge-health -f
+tail -f /opt/bridge-health/logs/orchestrator_status.log
+tail -f /opt/bridge-health/logs/gunicorn_error.log
+
+# Restart service
+sudo systemctl restart bridge-health
+
+# Reload workers (zero downtime)
+sudo systemctl reload bridge-health
 ```
 
 ## Development
@@ -349,7 +492,7 @@ WantedBy=multi-user.target
 │   └── logging.py             # Logging setup
 ├── scripts/                    # Utility scripts
 │   └── generate_api_key.py    # API key generation utility
-├── data/                       # Data files
+├── data/                       # Data files (not in git)
 │   └── orchestrator_status.json  # Status cache
 ├── logs/                       # Log files
 ├── run.py                      # Application entry point
