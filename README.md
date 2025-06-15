@@ -543,7 +543,8 @@ curl -H "User-Agent: Mozilla/5.0" -H "Referer: http://localhost:5001/" http://lo
 - **Can't connect to 127.0.0.1:5001**: Check if Gunicorn is actually running and binding to the correct port
 - **Remote access not working**: Change `bind = "127.0.0.1:5001"` to `bind = "0.0.0.0:5001"` in `gunicorn_config.py`
 - **Status not updating in Gunicorn**: The background updater now only runs in one worker to avoid conflicts. Check logs for "Background updater started in worker" message
-- **Unauthorized API access warnings**: These warnings occur when browsers access `/api/status` - this is normal and expected for web UI requests
+- **Frontend not auto-refreshing**: The API authentication now allows browser requests from the same host. Restart Gunicorn after pulling latest changes
+- **Unauthorized API access warnings**: These occur when API authentication is checking requests - normal for external API calls
 - **Multiple Flask app creation messages**: Normal in multi-worker Gunicorn setup - each worker creates its own app instance
 - **Firewall blocking access**: Ensure port 5001 is open in your firewall (e.g., `ufw allow 5001`)
 

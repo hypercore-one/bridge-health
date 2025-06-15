@@ -23,9 +23,20 @@ def require_api_key(f):
         # Check if this is an internal request (from the web UI)
         referer = request.headers.get('Referer', '')
         user_agent = request.headers.get('User-Agent', '')
+        host = request.headers.get('Host', '')
         
-        # If it's not from a browser (no referer), require API key
-        is_browser_request = referer and ('localhost' in referer or '127.0.0.1' in referer) and 'Mozilla' in user_agent
+        # Allow browser requests from the same host (regardless of IP/domain)
+        # This allows the web UI to work from any IP/domain
+        is_browser_request = False
+        if referer and user_agent and 'Mozilla' in user_agent:
+            # Extract the host from the referer
+            try:
+                from urllib.parse import urlparse
+                referer_host = urlparse(referer).netloc
+                # Compare just the host:port part
+                is_browser_request = referer_host == host
+            except:
+                pass
         
         if not is_browser_request:
             # Require API key for external requests
