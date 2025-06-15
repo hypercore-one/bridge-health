@@ -345,7 +345,7 @@ chmod 600 config/orchestrator_mapping.py
 
 4. **Test with Gunicorn**:
 ```bash
-gunicorn -c gunicorn_config.py "app:create_app()"
+gunicorn -c gunicorn_config.py "app.main:create_app()"
 ```
 
 5. **Create Systemd Service**:
@@ -365,7 +365,7 @@ User=$USER
 Group=$USER
 WorkingDirectory=/opt/bridge-health
 Environment="PATH=/opt/bridge-health/venv/bin"
-ExecStart=/opt/bridge-health/venv/bin/gunicorn -c /opt/bridge-health/gunicorn_config.py "app:create_app()"
+ExecStart=/opt/bridge-health/venv/bin/gunicorn -c /opt/bridge-health/gunicorn_config.py "app.main:create_app()"
 ExecReload=/bin/kill -s HUP $MAINPID
 KillMode=mixed
 TimeoutStopSec=5
@@ -463,6 +463,9 @@ sudo journalctl -u bridge-health -f
 tail -f /opt/bridge-health/logs/orchestrator_status.log
 tail -f /opt/bridge-health/logs/gunicorn_error.log
 
+# Test application connectivity
+curl http://127.0.0.1:5001/health
+
 # Restart service
 sudo systemctl restart bridge-health
 
@@ -533,6 +536,14 @@ curl -H "User-Agent: Mozilla/5.0" -H "Referer: http://localhost:5001/" http://lo
 - **Port conflicts**: Change `FLASK_PORT` if port 5001 is in use
 - **Permission errors**: Ensure proper file permissions for logs directory
 - **Configuration errors**: Run `python -c "from config import Config; print(Config.validate())"`
+- **Rate limiter warnings**: The in-memory warnings are normal for production - can be ignored or configure Redis for distributed storage
+
+### Production Deployment Issues
+- **"Failed to find attribute 'create_app'"**: Use `"app.main:create_app()"` instead of `"app:create_app()"`
+- **Can't connect to 127.0.0.1:5001**: Check if Gunicorn is actually running and binding to the correct port
+- **Remote access not working**: Change `bind = "127.0.0.1:5001"` to `bind = "0.0.0.0:5001"` in `gunicorn_config.py`
+- **Background updater not starting**: The background service should start automatically with Gunicorn workers
+- **Firewall blocking access**: Ensure port 5001 is open in your firewall (e.g., `ufw allow 5001`)
 
 ## Monitoring Access
 
