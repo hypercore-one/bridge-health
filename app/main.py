@@ -34,7 +34,7 @@ def create_app():
     # Store logger in app context for access by other modules
     app.logger_instance = logger
     
-    # Initialize and start background updater
+    # Initialize background updater (but don't start it here for Gunicorn)
     app.background_updater = BackgroundUpdater(update_interval=Config.UPDATE_INTERVAL, app=app)
     
     # Configure CORS
