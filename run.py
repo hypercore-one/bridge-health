@@ -8,13 +8,16 @@ import signal
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from app.main import create_app, get_logger
+from app.main import create_app, get_logger, start_background_services, stop_background_services
 from config.settings import Config
 
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully."""
     print("Shutting down gracefully...")
+    # Stop background services if app exists
+    if 'app' in globals():
+        stop_background_services(app)
     sys.exit(0)
 
 
@@ -31,6 +34,7 @@ def main():
         sys.exit(1)
     
     # Create Flask app
+    global app
     app = create_app()
     
     with app.app_context():
@@ -42,6 +46,9 @@ def main():
     # Set up signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Start background services
+    start_background_services(app)
     
     # Start the Flask app
     ssl_context = None

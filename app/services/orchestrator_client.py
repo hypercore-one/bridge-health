@@ -31,29 +31,14 @@ DEFAULT_PORT = 55000
 ONLINE_STATES = [0, 1]  # States that indicate orchestrator is online
 MIN_ONLINE_FOR_BRIDGE = 16  # Minimum orchestrators online for bridge to be considered online
 
-# Static pillar mapping - IP to pillar name and pubkey
-PILLAR_MAPPING = {
-    "5.161.213.40": {"name": "Anvil", "pubkey": "Cdq18YwdIT21VcOOl3uczUl/W+RGCqi9CgFIf4CLr8g="},
-    "51.222.12.113": {"name": "Zeno", "pubkey": "HxX/6MM7jcjqHAyESWHvLVN3KLWjt6GKgRAgTY9CUqc="},
-    "172.245.233.178": {"name": "0x3639.com", "pubkey": "LbNpGLiwr9ZVAx5Rzbq/dMI7ijkSZf6nMI7Zlof8j0k="},
-    "161.97.167.129": {"name": "12N11", "pubkey": "NbxBOar2Q8pPYa2ABIap2aOCzpZO2MZuXwoLNrk3bdc="},
-    "23.95.79.26": {"name": "NoMLabz.org", "pubkey": "WzKhvWcekYTdRyAGrB4bW3fbj/Zvk1aSQNUkxVst700="},
-    "159.69.183.154": {"name": "ZenonORG3", "pubkey": "bLgOQXP9qEDm0snI/NFAO1kVzE17YHdzHxMmoPQawQU="},
-    "49.13.221.207": {"name": "ZenonORG2", "pubkey": "dpJTNz+J+t+61CqNmqBCqN3jHhdiMbXqxAd6/eNlVmo="},
-    "62.171.148.56": {"name": "StakeServe", "pubkey": "eP5mlLqa47bA5R79hh2ds/R5sOPa8nhWcDQN5w4BsEY="},
-    "51.89.155.26": {"name": "ElderZ", "pubkey": "ePSgBL7qaYNU5OYpmqmPm1ayI6BNIt0XhH0v2Yh220g="},
-    "51.222.12.145": {"name": "MoonBaZe", "pubkey": "fvGMCT2U5wAV9clv2LBpTMdSKHqcUiqI3NuglmWcZkk="},
-    "34.125.216.244": {"name": "SultanOfStaking", "pubkey": "gwXonyuXWFRnz4lryObtUZKeOiq31Nh53GLRMDlha2M="},
-    "93.127.202.74": {"name": "Nexus", "pubkey": "h1vpPABWPgtu0BE886LqRESoQ/WkokPQNO6JiyoVEsk="},
-    "23.95.72.54": {"name": "DeeZNNutz.com", "pubkey": "i0MkFAj+f4FipCHu/L4Ee3g23pkRR7eoOPe1VRH2S4Y="},
-    "51.79.147.224": {"name": "tapwoot", "pubkey": "iyyltT42L6pZgS0B7RQOSl5p26FsMSlt4V76ZI9+kcU="},
-    "51.83.187.145": {"name": "WotGasFees", "pubkey": "k0VjkxdFXz3tgEszXcAvXInYUDRMzVPcUhyaVGREriI="},
-    "109.104.152.53": {"name": "Stark", "pubkey": "nxPtMkX6BJn/NSOV9qTV/T4yXQ3b0QTPaySla38L8go="},
-    "89.145.164.212": {"name": "Megalith", "pubkey": "p+bD1q4OniBmikRX2UscBFXV/mnOz/ILAoH5Kd6hRNA="},
-    "51.79.147.166": {"name": "Time", "pubkey": "t8el+WTyESTS4Lke/+5hQX8cjnnoqjYM9uVBYJyxfUo="},
-    "178.18.251.111": {"name": "Mariposa01", "pubkey": "vm37WOlgoQc2yCgVX2IUj5xCfOgObj5Za7xi9ZRpGq8="},
-    "188.245.58.57": {"name": "ZenonORG", "pubkey": "wePlF1o2eLtxFvWgslazIhjGhlRI4lVQOduUr3v37W4="}
-}
+# Import pillar mapping from external config file
+try:
+    from config.orchestrator_mapping import PILLAR_MAPPING
+except ImportError:
+    # Fallback to empty mapping with helpful error message
+    PILLAR_MAPPING = {}
+    logger.warning("Could not import PILLAR_MAPPING from config.orchestrator_mapping. "
+                  "Please ensure config/orchestrator_mapping.py exists with PILLAR_MAPPING defined.")
 
 
 class OrchestratorClient:
@@ -262,22 +247,31 @@ class OrchestratorClient:
         results = []
         start_time = time.time()
         
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all tasks
-            future_to_ip = {
-                executor.submit(self.query_single_orchestrator, ip): ip 
-                for ip in ip_addresses
-            }
+        # Process in batches to avoid overwhelming the orchestrators
+        batch_size = self.max_workers
+        for i in range(0, len(ip_addresses), batch_size):
+            batch = ip_addresses[i:i + batch_size]
             
-            # Collect results as they complete
-            for future in as_completed(future_to_ip):
-                ip = future_to_ip[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                except Exception as e:
-                    logger.error(f"Failed to query orchestrator {ip}: {e}")
-                    results.append(self._create_error_response(ip, str(e)))
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # Submit batch tasks
+                future_to_ip = {
+                    executor.submit(self.query_single_orchestrator, ip): ip 
+                    for ip in batch
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_ip):
+                    ip = future_to_ip[future]
+                    try:
+                        result = future.result()
+                        results.append(result)
+                    except Exception as e:
+                        logger.error(f"Failed to query orchestrator {ip}: {e}")
+                        results.append(self._create_error_response(ip, str(e)))
+            
+            # Small delay between batches to avoid rate limiting
+            if i + batch_size < len(ip_addresses):
+                time.sleep(0.2)
         
         # Sort results by pillar name
         results.sort(key=lambda x: x['pillar_name'].lower())

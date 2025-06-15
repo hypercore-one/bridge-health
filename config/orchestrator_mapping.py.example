@@ -1,0 +1,10 @@
+# Example orchestrator mapping configuration
+# Copy this file to orchestrator_mapping.py and update with your actual orchestrator details
+
+# Static pillar mapping - IP to pillar name and pubkey
+PILLAR_MAPPING = {
+    "1.2.3.4": {"name": "ExamplePillar1", "pubkey": "ExamplePubKey1=="},
+    "5.6.7.8": {"name": "ExamplePillar2", "pubkey": "ExamplePubKey2=="},
+    # Add your orchestrator mappings here...
+    # "IP_ADDRESS": {"name": "PILLAR_NAME", "pubkey": "PUBLIC_KEY"},
+}

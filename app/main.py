@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.settings import Config
 from config.logging import setup_logging
+from app.services.background_updater import BackgroundUpdater
 
 
 def create_app():
@@ -32,6 +33,9 @@ def create_app():
     
     # Store logger in app context for access by other modules
     app.logger_instance = logger
+    
+    # Initialize and start background updater
+    app.background_updater = BackgroundUpdater(update_interval=Config.UPDATE_INTERVAL, app=app)
     
     # Configure CORS
     CORS(app, origins=Config.ALLOWED_ORIGINS)
@@ -60,6 +64,8 @@ def create_app():
     app.register_blueprint(web_bp)
     app.register_blueprint(api_bp, url_prefix='/api')
     
+    # Background updater will be stopped by signal handlers in run.py
+    
     logger.info("Flask application created successfully")
     return app
 
@@ -72,3 +78,21 @@ def get_logger():
     else:
         # Fallback if called outside app context
         return setup_logging('orchestrator_status')
+
+
+def start_background_services(app):
+    """Start background services for the application."""
+    with app.app_context():
+        logger = get_logger()
+        if hasattr(app, 'background_updater'):
+            logger.info("Starting background status updater...")
+            app.background_updater.start()
+            # Force an immediate update on startup
+            app.background_updater.force_update()
+            logger.info("Background services started successfully")
+
+
+def stop_background_services(app):
+    """Stop background services for the application."""
+    if hasattr(app, 'background_updater'):
+        app.background_updater.stop()

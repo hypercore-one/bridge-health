@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+config/orchestrator_mapping.py
 
 # Data files (contains live orchestrator data)
 data/
